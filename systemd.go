@@ -10,10 +10,14 @@ import (
 	execute "github.com/alexellis/go-execute/pkg/v1"
 )
 
+const userflag = "--user"
+const systemunits = "/lib/systemd/system"
+const userunits = "/lib/systemd/user"
+
 func Enable(unit string, user bool) error {
 	us := ""
 	if user {
-		us = "--user"
+		us = userflag
 	}
 	task := execute.ExecTask{Command: "systemctl",
 		Args:        []string{"enable", us, unit},
@@ -35,7 +39,7 @@ func Enable(unit string, user bool) error {
 func Start(unit string, user bool) error {
 	us := ""
 	if user {
-		us = "--user"
+		us = userflag
 	}
 	task := execute.ExecTask{Command: "systemctl",
 		Args:        []string{"start", us, unit},
@@ -72,16 +76,14 @@ func DaemonReload() error {
 	return nil
 }
 
-func InstallUnit(name string, tokens map[string]string, user bool) error {
+func InstallUnit(name string, tplFile string, tokens map[string]string, user bool) error {
 	if len(tokens["Cwd"]) == 0 {
 		return fmt.Errorf("key Cwd expected in tokens parameter")
 	}
 
-	tmplName := "devproxy.service"
-	tmpl, err := template.ParseFiles(tmplName)
-
+	tmpl, err := template.ParseFiles(tplFile)
 	if err != nil {
-		return fmt.Errorf("error loading template %s, error %s", tmplName, err)
+		return fmt.Errorf("error loading template %s, error %s", tplFile, err)
 	}
 
 	var tpl bytes.Buffer
@@ -91,8 +93,15 @@ func InstallUnit(name string, tokens map[string]string, user bool) error {
 		return err
 	}
 
-	err = writeUnit(name+".service", tpl.Bytes(), user)
+	err = InstallUnitFile(name, tpl.Bytes(), user)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+func InstallUnitFile(name string, unitfile []byte, user bool) error {
+	err := writeUnit(name+".service", unitfile, user)
 	if err != nil {
 		return err
 	}
@@ -100,15 +109,21 @@ func InstallUnit(name string, tokens map[string]string, user bool) error {
 }
 
 func writeUnit(name string, data []byte, user bool) error {
-	unitpath := "/lib/systemd/system"
+	unitpath := systemunits
 	if user {
-		unitpath = "/lib/systemd/user"
+		unitpath = userunits
 	}
+
 	f, err := os.Create(filepath.Join(unitpath, name))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
 	_, err = f.Write(data)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
